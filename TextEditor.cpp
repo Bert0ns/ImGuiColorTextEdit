@@ -383,6 +383,9 @@ TextEditor::Coordinates TextEditor::ScreenPosToCoordinates(const ImVec2& aPositi
 			}
 			++columnIndex;
 		}
+		
+		if (mTextStart + columnX - (aInsertionMode ? 0.5f : 0.0f) * columnWidth < local.x)
+			columnCoord += delta;
 
 		// Then we reduce by 1 column coord if cursor is on the left side of the hovered column.
 		//if (aInsertionMode && mTextStart + columnX - columnWidth * 2.0f < local.x)
@@ -875,6 +878,7 @@ void TextEditor::HandleMouseInputs()
 				io.WantCaptureMouse = true;
 				mState.mCursorPosition = mInteractiveEnd = SanitizeCoordinates(ScreenPosToCoordinates(ImGui::GetMousePos(), !mOverwrite));
 				SetSelection(mInteractiveStart, mInteractiveEnd, mSelectionMode);
+				EnsureCursorVisible();
 			}
 		}
 	}

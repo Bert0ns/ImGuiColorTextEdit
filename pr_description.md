@@ -26,7 +26,11 @@ Modern web development requires nested syntax highlighting (HTML with `<style>` 
 - **`ColorizeInternal` State Tracking**: Re-architected the linear tokenizer to track language block boundaries, including a robust transition delay so boundary tags (like `</style>`) retain parent language styling.
 - **`ColorizeRange` Segmenting**: Tokenization and Keyword dictionary matching now operate strictly within contiguous language segments.
 
+### 3. Selection & Auto-Scrolling Fixes
+- **Last Character Selection**: The `ScreenPosToCoordinates` loop incorrectly dropped the final character delta if the mouse hovered past the exact center of the rightmost character on a line, making the last character artificially hard to select. Added the necessary bounds-checked delta calculation immediately following the loop.
+- **Drag Auto-Scrolling**: The `ImGui::IsMouseDragging` handler successfully updated text selection bounds but lacked a call to `EnsureCursorVisible()`, meaning the editor wouldn't scroll when dragging the cursor outside the viewport. This has been added, allowing smooth text selection scrolling.
+
 ## Testing
 - **Visuals**: Verified that CSS and JS blocks embedded inside HTML parse perfectly with independent regex and keywords.
-- **Scrolling**: Verified that horizontal padding is correctly applied even on the absolute longest line of the document.
+- **Scrolling & Selection**: Verified that horizontal padding is correctly applied even on the absolute longest line. Verified that selecting text with the mouse correctly snaps to the end of lines, and dragging out of bounds successfully scrolls the editor.
 - **Performance**: Confirmed fast line rendering and negligible memory overhead from `mLanguageIndex` tracking.
