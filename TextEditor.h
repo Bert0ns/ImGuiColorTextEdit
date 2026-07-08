@@ -140,9 +140,10 @@ public:
 		bool mComment : 1;
 		bool mMultiLineComment : 1;
 		bool mPreprocessor : 1;
+		uint8_t mLanguageIndex = 0;
 
 		Glyph(Char aChar, PaletteIndex aColorIndex) : mChar(aChar), mColorIndex(aColorIndex),
-			mComment(false), mMultiLineComment(false), mPreprocessor(false) {}
+			mComment(false), mMultiLineComment(false), mPreprocessor(false), mLanguageIndex(0) {}
 	};
 
 	typedef std::vector<Glyph> Line;
@@ -165,6 +166,14 @@ public:
 		TokenizeCallback mTokenize;
 
 		TokenRegexStrings mTokenRegexStrings;
+
+		struct SubLanguage
+		{
+			std::string mStartRegex;
+			std::string mEndString;
+			LanguageDefinition* mDefinition;
+		};
+		std::vector<SubLanguage> mSubLanguages;
 
 		bool mCaseSensitive;
 
@@ -378,6 +387,16 @@ private:
 
 	Palette mPaletteBase;
 	Palette mPalette;
+	struct SubLanguageRegex
+	{
+		std::regex mStartRegex;
+		std::string mEndString;
+		LanguageDefinition* mDefinition;
+		uint8_t mIndex;
+		RegexList mTokenRegexList;
+	};
+	std::vector<SubLanguageRegex> mSubLanguageRegexList;
+
 	LanguageDefinition mLanguageDefinition;
 	RegexList mRegexList;
 

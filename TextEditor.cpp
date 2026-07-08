@@ -67,6 +67,22 @@ void TextEditor::SetLanguageDefinition(const LanguageDefinition & aLanguageDef)
 	for (auto& r : mLanguageDefinition.mTokenRegexStrings)
 		mRegexList.push_back(std::make_pair(std::regex(r.first, std::regex_constants::optimize), r.second));
 
+	mSubLanguageRegexList.clear();
+	uint8_t slIndex = 1;
+	for (auto& sl : mLanguageDefinition.mSubLanguages)
+	{
+		SubLanguageRegex slr;
+		slr.mStartRegex = std::regex(sl.mStartRegex, std::regex_constants::optimize);
+		slr.mEndString = sl.mEndString;
+		slr.mDefinition = sl.mDefinition;
+		slr.mIndex = slIndex++;
+		if (sl.mDefinition) {
+			for (auto& r : sl.mDefinition->mTokenRegexStrings)
+				slr.mTokenRegexList.push_back(std::make_pair(std::regex(r.first, std::regex_constants::optimize), r.second));
+		}
+		mSubLanguageRegexList.push_back(slr);
+	}
+
 	Colorize();
 }
 
@@ -1122,7 +1138,6 @@ void TextEditor::Render()
 			if (local.x >= mTextStart)
 			{
 				auto pos = ScreenPosToCoordinates(mpos);
-				printf("Coord(%d, %d)\n", pos.mLine, pos.mColumn);
 				auto id = GetWordAt(pos);
 				if (!id.empty())
 				{
@@ -2216,29 +2231,43 @@ void TextEditor::ColorizeRange(int aFromLine, int aToLine)
 		const char * bufferBegin = &buffer.front();
 		const char * bufferEnd = bufferBegin + buffer.size();
 
-		auto last = bufferEnd;
-
-		for (auto first = bufferBegin; first != last; )
+		auto segmentFirst = bufferBegin;
+		while (segmentFirst != bufferEnd)
 		{
-			const char * token_begin = nullptr;
-			const char * token_end = nullptr;
-			PaletteIndex token_color = PaletteIndex::Default;
+			int startIndex = segmentFirst - bufferBegin;
+			uint8_t currentLangIdx = line[startIndex].mLanguageIndex;
 
-			bool hasTokenizeResult = false;
+			auto segmentLast = segmentFirst;
+			while (segmentLast != bufferEnd && line[segmentLast - bufferBegin].mLanguageIndex == currentLangIdx)
+				++segmentLast;
 
-			if (mLanguageDefinition.mTokenize != nullptr)
+			const LanguageDefinition* activeLangDef = &mLanguageDefinition;
+			const RegexList* activeRegexList = &mRegexList;
+			if (currentLangIdx > 0 && currentLangIdx <= mSubLanguageRegexList.size())
 			{
-				if (mLanguageDefinition.mTokenize(first, last, token_begin, token_end, token_color))
-					hasTokenizeResult = true;
+				activeLangDef = mSubLanguageRegexList[currentLangIdx - 1].mDefinition;
+				activeRegexList = &mSubLanguageRegexList[currentLangIdx - 1].mTokenRegexList;
 			}
 
-			if (hasTokenizeResult == false)
+			auto last = segmentLast;
+			for (auto first = segmentFirst; first != last; )
 			{
-				// todo : remove
-				//printf("using regex for %.*s\n", first + 10 < last ? 10 : int(last - first), first);
+				const char * token_begin = nullptr;
+				const char * token_end = nullptr;
+				PaletteIndex token_color = PaletteIndex::Default;
 
-				for (auto& p : mRegexList)
+				bool hasTokenizeResult = false;
+
+				if (activeLangDef && activeLangDef->mTokenize != nullptr)
 				{
+					if (activeLangDef->mTokenize(first, last, token_begin, token_end, token_color))
+						hasTokenizeResult = true;
+				}
+
+				if (hasTokenizeResult == false)
+				{
+					for (auto& p : *activeRegexList)
+					{
 					if (std::regex_search(first, last, results, p.first, std::regex_constants::match_continuous))
 					{
 						hasTokenizeResult = true;
@@ -2265,21 +2294,21 @@ void TextEditor::ColorizeRange(int aFromLine, int aToLine)
 					id.assign(token_begin, token_end);
 
 					// todo : allmost all language definitions use lower case to specify keywords, so shouldn't this use ::tolower ?
-					if (!mLanguageDefinition.mCaseSensitive)
+					if (activeLangDef && !activeLangDef->mCaseSensitive)
 						std::transform(id.begin(), id.end(), id.begin(), ::toupper);
 
 					if (!line[first - bufferBegin].mPreprocessor)
 					{
-						if (mLanguageDefinition.mKeywords.count(id) != 0)
+						if (activeLangDef && activeLangDef->mKeywords.count(id) != 0)
 							token_color = PaletteIndex::Keyword;
-						else if (mLanguageDefinition.mIdentifiers.count(id) != 0)
+						else if (activeLangDef && activeLangDef->mIdentifiers.count(id) != 0)
 							token_color = PaletteIndex::KnownIdentifier;
-						else if (mLanguageDefinition.mPreprocIdentifiers.count(id) != 0)
+						else if (activeLangDef && activeLangDef->mPreprocIdentifiers.count(id) != 0)
 							token_color = PaletteIndex::PreprocIdentifier;
 					}
 					else
 					{
-						if (mLanguageDefinition.mPreprocIdentifiers.count(id) != 0)
+						if (activeLangDef && activeLangDef->mPreprocIdentifiers.count(id) != 0)
 							token_color = PaletteIndex::PreprocIdentifier;
 					}
 				}
@@ -2289,6 +2318,8 @@ void TextEditor::ColorizeRange(int aFromLine, int aToLine)
 
 				first = token_end;
 			}
+		}
+		segmentFirst = segmentLast;
 		}
 	}
 }
@@ -2307,6 +2338,8 @@ void TextEditor::ColorizeInternal()
 		auto withinString = false;
 		auto withinSingleLineComment = false;
 		auto withinPreproc = false;
+		uint8_t activeSubLanguageIndex = 0;
+		int subLanguageTransitionDelay = 0;
 		auto firstChar = true;			// there is no other non-whitespace characters in the line before
 		auto concatenate = false;		// '\' on the very end of the line
 		auto currentLine = 0;
@@ -2404,7 +2437,58 @@ void TextEditor::ColorizeInternal()
 					}
 				}
 				line[currentIndex].mPreprocessor = withinPreproc;
-				currentIndex += UTF8CharLength(c);
+
+				if (!inComment && !withinString && !withinSingleLineComment && !withinPreproc)
+				{
+					if (activeSubLanguageIndex == 0)
+					{
+						if (c == '<' && !mSubLanguageRegexList.empty())
+						{
+							std::string restOfLine;
+							for (int i = currentIndex; i < (int)line.size(); ++i) restOfLine += line[i].mChar;
+							
+							for (auto& sl : mSubLanguageRegexList)
+							{
+								std::cmatch match;
+								if (std::regex_search(restOfLine.c_str(), match, sl.mStartRegex, std::regex_constants::match_continuous))
+								{
+									activeSubLanguageIndex = sl.mIndex;
+									subLanguageTransitionDelay = match.length(0);
+									break;
+								}
+							}
+						}
+					}
+					else
+					{
+						auto& endStr = mSubLanguageRegexList[activeSubLanguageIndex - 1].mEndString;
+						if (endStr.size() > 0 && currentIndex + endStr.size() <= line.size())
+						{
+							bool match = true;
+							for (size_t i = 0; i < endStr.size(); ++i) {
+								if (line[currentIndex + i].mChar != endStr[i]) { match = false; break; }
+							}
+							if (match)
+							{
+								activeSubLanguageIndex = 0;
+							}
+						}
+					}
+				}
+
+				uint8_t glyphLanguage = activeSubLanguageIndex;
+				if (subLanguageTransitionDelay > 0)
+				{
+					glyphLanguage = 0;
+				}
+				line[currentIndex].mLanguageIndex = glyphLanguage;
+
+				int charLen = UTF8CharLength(c);
+				if (subLanguageTransitionDelay > 0)
+				{
+					subLanguageTransitionDelay -= charLen;
+				}
+				currentIndex += charLen;
 				if (currentIndex >= (int)line.size())
 				{
 					currentIndex = 0;
