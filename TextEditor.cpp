@@ -1577,9 +1577,15 @@ void TextEditor::MoveUp(int aAmount, bool aSelect)
 		else
 			mInteractiveStart = mInteractiveEnd = mState.mCursorPosition;
 		SetSelection(mInteractiveStart, mInteractiveEnd);
-
-		EnsureCursorVisible();
 	}
+	else if (!aSelect)
+	{
+		mState.mCursorPosition.mColumn = 0;
+		mInteractiveStart = mInteractiveEnd = mState.mCursorPosition;
+		SetSelection(mInteractiveStart, mInteractiveEnd);
+	}
+	mStartTime = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+	EnsureCursorVisible();
 }
 
 void TextEditor::MoveDown(int aAmount, bool aSelect)
@@ -1605,9 +1611,15 @@ void TextEditor::MoveDown(int aAmount, bool aSelect)
 		else
 			mInteractiveStart = mInteractiveEnd = mState.mCursorPosition;
 		SetSelection(mInteractiveStart, mInteractiveEnd);
-
-		EnsureCursorVisible();
 	}
+	else if (!aSelect)
+	{
+		mState.mCursorPosition.mColumn = std::max(mState.mCursorPosition.mColumn, GetLineMaxColumn(mState.mCursorPosition.mLine));
+		mInteractiveStart = mInteractiveEnd = mState.mCursorPosition;
+		SetSelection(mInteractiveStart, mInteractiveEnd);
+	}
+	mStartTime = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+	EnsureCursorVisible();
 }
 
 static bool IsUTFSequence(char c)
@@ -1678,6 +1690,7 @@ void TextEditor::MoveLeft(int aAmount, bool aSelect, bool aWordMode)
 		mInteractiveStart = mInteractiveEnd = mState.mCursorPosition;
 	SetSelection(mInteractiveStart, mInteractiveEnd, aSelect && aWordMode ? SelectionMode::Word : SelectionMode::Normal);
 
+	mStartTime = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
 	EnsureCursorVisible();
 }
 
@@ -1729,6 +1742,7 @@ void TextEditor::MoveRight(int aAmount, bool aSelect, bool aWordMode)
 		mInteractiveStart = mInteractiveEnd = mState.mCursorPosition;
 	SetSelection(mInteractiveStart, mInteractiveEnd, aSelect && aWordMode ? SelectionMode::Word : SelectionMode::Normal);
 
+	mStartTime = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
 	EnsureCursorVisible();
 }
 
